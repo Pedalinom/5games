@@ -1,0 +1,428 @@
+import pygame
+from os.path import join
+import random
+from random import randint, uniform
+
+class Player(pygame.sprite.Sprite):
+    def __init__(self, groups):
+        super().__init__(groups)
+        self.images = {
+            'down': [pygame.image.load(join('images', 'player', 'down', f'{i}.png')).convert_alpha() for i in range(4)],
+            'up': [pygame.image.load(join('images', 'player', 'up', f'{i}.png')).convert_alpha() for i in range(4)],
+            'left': [pygame.image.load(join('images', 'player', 'left', f'{i}.png')).convert_alpha() for i in range(4)],
+            'right': [pygame.image.load(join('images', 'player', 'right', f'{i}.png')).convert_alpha() for i in range(4)]
+        }
+        self.image = self.images['down'][0]
+        self.mask = pygame.mask.from_surface(self.image)
+        # Start player in lower right corner
+        self.rect = self.image.get_frect(center=(WINDOW_WIDTH - self.image.get_width() // 2 - 10, WINDOW_HEIGHT - self.image.get_height() // 2 - 10))
+        self.direction = pygame.math.Vector2()
+        self.speed = 100
+        self.frame_index = 0
+        self.animation_speed = .1
+        self.current_direction = 'down'
+        self.max_health = 10
+        self.health = 10
+
+    def update(self, dt):
+        keys = pygame.key.get_pressed()
+        self.direction.x = int(keys[pygame.K_RIGHT]) - int(keys[pygame.K_LEFT])
+        self.direction.y = int(keys[pygame.K_DOWN]) - int(keys[pygame.K_UP])
+        if keys[pygame.K_RIGHT]:
+            self.current_direction = 'right'
+        elif keys[pygame.K_LEFT]:
+            self.current_direction = 'left'
+        elif keys[pygame.K_UP]:
+            self.current_direction = 'up'
+        elif keys[pygame.K_DOWN]:
+            self.current_direction = 'down'
+
+        if self.direction.length() > 0:
+            self.direction = self.direction.normalize()
+            # Move and clamp x axis first with mask collision
+            if self.direction.x != 0:
+                self.rect.centerx += self.direction.x * self.speed * dt
+
+            # Then move and clamp y axis with mask collision
+            if self.direction.y != 0:
+                self.rect.centery += self.direction.y * self.speed * dt
+                for chest in chest_group:
+                    if pygame.sprite.collide_mask(self, chest):
+                        if self.direction.y > 0:
+                            self.rect.bottom = chest.rect.top
+                        elif self.direction.y < 0:
+                            self.rect.top = chest.rect.bottom
+            self.frame_index += self.animation_speed
+            if self.frame_index >= len(self.images[self.current_direction]):
+                self.frame_index = 0
+            self.image = self.images[self.current_direction][int(self.frame_index)]
+            self.mask = pygame.mask.from_surface(self.image)
+        else:
+            self.frame_index = 0
+            self.image = self.images[self.current_direction][int(self.frame_index)]
+            self.mask = pygame.mask.from_surface(self.image)
+
+        if self.rect.left < 0:
+            self.rect.left = 0
+        if self.rect.right > WINDOW_WIDTH:
+            self.rect.right = WINDOW_WIDTH
+        if self.rect.top < 0:
+            self.rect.top = 0
+        if self.rect.bottom > WINDOW_HEIGHT:
+            self.rect.bottom = WINDOW_HEIGHT
+        # Clamp to chest like a boundary, but only on the axis of movement
+        chest_collisions = pygame.sprite.spritecollide(self, chest_group, False)
+        for chest in chest_collisions:
+            if self.rect.bottom > chest.rect.top and self.rect.top < chest.rect.top:
+                self.rect.bottom = chest.rect.top
+            elif self.rect.top < chest.rect.bottom and self.rect.bottom > chest.rect.bottom:
+                self.rect.top = chest.rect.bottom
+            elif self.rect.right > chest.rect.left and self.rect.left < chest.rect.left:
+                self.rect.right = chest.rect.left
+            elif self.rect.left < chest.rect.right and self.rect.right > chest.rect.right:
+                self.rect.left = chest.rect.right
+
+class Player_Enemy(pygame.sprite.Sprite):
+    def __init__(self, groups):
+        super().__init__(groups)
+        self.images = {
+            'down': [pygame.image.load(join('images', 'enemy', 'down', f'{i}.png')).convert_alpha() for i in range(4)],
+            'up': [pygame.image.load(join('images', 'enemy', 'up', f'{i}.png')).convert_alpha() for i in range(4)],
+            'left': [pygame.image.load(join('images', 'enemy', 'left', f'{i}.png')).convert_alpha() for i in range(4)],
+            'right': [pygame.image.load(join('images', 'enemy', 'right', f'{i}.png')).convert_alpha() for i in range(4)]
+        }
+        self.image = self.images['down'][0]
+        self.rect = self.image.get_frect(center=(WINDOW_WIDTH / 4, WINDOW_HEIGHT / 4))
+        self.direction = pygame.math.Vector2()
+        self.speed = 100
+        self.frame_index = 0
+        self.animation_speed = .1
+        self.current_direction = 'down'
+        self.max_health = 10
+        self.health = 10
+        self.move_timer = 0
+        self.shoot_timer = 0
+        self.move_interval = 4
+        self.shoot_interval = 2
+
+    def update(self, dt):
+        self.move_timer += dt
+        self.shoot_timer += dt
+        if self.move_timer >= self.move_interval:
+            self.move_timer = 0
+            directions = ['right', 'left', 'up', 'down', 'down_left', 'down_right', 'up_left', 'up_right']
+            self.current_direction = random.choice(directions)
+            if self.current_direction == 'right':
+                self.direction = pygame.math.Vector2(1, 0)
+            elif self.current_direction == 'left':
+                self.direction = pygame.math.Vector2(-1, 0)
+            elif self.current_direction == 'up':
+                self.direction = pygame.math.Vector2(0, -1)
+            elif self.current_direction == 'down':
+                self.direction = pygame.math.Vector2(0, 1)
+            elif self.current_direction == 'down_left':
+                self.direction = pygame.math.Vector2(-1, 1)
+                self.current_direction = 'left'
+            elif self.current_direction == 'down_right':
+                self.direction = pygame.math.Vector2(1, 1)
+                self.current_direction = 'right'
+            elif self.current_direction == 'up_left':
+                self.direction = pygame.math.Vector2(-1, -1)
+                self.current_direction = 'left'
+            elif self.current_direction == 'up_right':
+                self.direction = pygame.math.Vector2(1, -1)
+                self.current_direction = 'right'
+            self.direction = self.direction.normalize()
+        if self.shoot_timer >= self.shoot_interval:
+            self.shoot_timer = 0
+            to_player = pygame.math.Vector2(player.rect.centerx - self.rect.centerx, player.rect.centery - self.rect.centery)
+            if to_player.length() > 0:
+                direction_to_player = to_player.normalize()
+            else:
+                direction_to_player = pygame.math.Vector2(1, 0)
+            offset_distance = self.rect.width // 2 + 6
+            spawn_pos = (self.rect.centerx + direction_to_player.x * offset_distance,
+                         self.rect.centery + direction_to_player.y * offset_distance)
+            Ball(spawn_pos, direction_to_player, [all_sprites, balls], color=(0,255,0))
+
+        if self.direction.length() > 0:
+            self.direction = self.direction.normalize()
+            self.rect.center += self.direction * self.speed * dt
+            self.frame_index += self.animation_speed
+            if self.frame_index >= len(self.images[self.current_direction]):
+                self.frame_index = 0
+            self.image = self.images[self.current_direction][int(self.frame_index)]
+        else:
+            self.frame_index = 0
+            self.image = self.images[self.current_direction][int(self.frame_index)]
+
+        # Reverse direction if hitting window boundary, and update animation direction
+        reversed = False
+        if self.rect.left < 0 or self.rect.right > WINDOW_WIDTH:
+            self.direction.x = self.direction.x * -1
+            reversed = True
+        elif self.rect.top < 0 or self.rect.bottom > WINDOW_HEIGHT:
+            self.direction.y = self.direction.y * -1
+            reversed = True
+        # Reverse direction if hitting the chest, and update animation direction
+        for chest in chest_group:
+            if self.rect.colliderect(chest.rect):
+                dx = (self.rect.centerx - chest.rect.centerx) / chest.rect.width
+                dy = (self.rect.centery - chest.rect.centery) / chest.rect.height
+                if abs(dx) > abs(dy):
+                    self.direction.x *= -1
+                    # Switch animation direction
+                    if self.current_direction == 'right':
+                        self.current_direction = 'left'
+                    elif self.current_direction == 'left':
+                        self.current_direction = 'right'
+                else:
+                    self.direction.y *= -1
+                    if self.current_direction == 'up':
+                        self.current_direction = 'down'
+                    elif self.current_direction == 'down':
+                        self.current_direction = 'up'
+                # Move enemy out of chest to prevent sticking
+                while self.rect.colliderect(chest.rect):
+                    self.rect.center += self.direction
+                reversed = False  # Already handled direction
+        # If reversed by window boundary, update animation direction
+        if reversed:
+            if abs(self.direction.x) > abs(self.direction.y):
+                if self.direction.x > 0:
+                    self.current_direction = 'right'
+                else:
+                    self.current_direction = 'left'
+            else:
+                if self.direction.y > 0:
+                    self.current_direction = 'down'
+                else:
+                    self.current_direction = 'up'
+
+class AnimatedExplosions(pygame.sprite.Sprite):
+    def __init__(self, frames, pos, groups):
+        super().__init__(groups)
+        self.frames = frames
+        self.frame_index = 0
+        self.image = self.frames[self.frame_index]
+        self.rect = self.image.get_frect(center = pos)
+
+    def update(self, dt):
+        self.frame_index += 20 * dt
+        if self.frame_index < len(self.frames):
+            self.image = self.frames[int(self.frame_index)]
+        else:
+            self.kill()
+
+class Chest(pygame.sprite.Sprite):
+    def __init__(self, groups, surf):
+        super().__init__(groups)
+        self.image = surf
+        self.rect = self.image.get_frect(center=(WINDOW_WIDTH // 2, WINDOW_HEIGHT // 2))
+
+def collisions():
+    global running
+    global enemy
+    for ball in balls:
+        ball_collision = pygame.sprite.spritecollide(ball, balls, False)
+        player_collision = pygame.sprite.spritecollide(ball, [player], False, pygame.sprite.collide_mask)
+        enemy_collision = None
+        if enemy is not None and enemy.alive():
+            enemy_collision = pygame.sprite.spritecollide(ball, [enemy], False, pygame.sprite.collide_mask)
+        if player_collision:
+            player.health -= 1
+            damage_sound.play()
+            balls.remove(ball)
+            all_sprites.remove(ball)
+            if player.health <= 0:
+                player.kill()
+                game_over_label = pygame.font.SysFont('arial', 50).render('Game Over', True, 'red')
+                game_over_rect = game_over_label.get_rect(center=(WINDOW_WIDTH / 2, WINDOW_HEIGHT / 2))
+                display_surface.blit(game_over_label, game_over_rect)
+                pygame.display.update()
+            break
+        elif enemy_collision:
+            enemy.health -= 1
+            damage_sound.play()
+            balls.remove(ball)
+            all_sprites.remove(ball)
+            if enemy.health <= 0:
+                enemy.kill()
+                enemy = None
+            break
+        for other_ball in ball_collision:
+            if ball != other_ball:
+                balls.remove(ball)
+                balls.remove(other_ball)
+                all_sprites.remove(ball)
+                all_sprites.remove(other_ball)
+                explosion = AnimatedExplosions(explosion_frames, ball.rect.midtop, all_sprites)
+                explosion_sound.play()
+                break
+    # Player and enemy collision: lose 1 health and push away
+    if enemy is not None and enemy.alive():
+        player_enemy_collision = pygame.sprite.spritecollide(player, [enemy], False, pygame.sprite.collide_mask)
+        if player_enemy_collision:
+            player.health -= 1
+            enemy.health -= 1
+            damage_sound.play()
+            # Push away: move each away from the other along the line connecting their centers
+            direction = pygame.math.Vector2(player.rect.center) - pygame.math.Vector2(enemy.rect.center)
+            if direction.length() == 0:
+                direction = pygame.math.Vector2(1, 0)
+            direction = direction.normalize()
+            push_distance = 20
+            # Move player and enemy, but clamp to window boundaries
+            new_player_center = pygame.math.Vector2(player.rect.center) + direction * push_distance
+            new_enemy_center = pygame.math.Vector2(enemy.rect.center) - direction * push_distance
+            # Clamp player
+            new_player_center.x = max(player.rect.width // 2, min(WINDOW_WIDTH - player.rect.width // 2, new_player_center.x))
+            new_player_center.y = max(player.rect.height // 2, min(WINDOW_HEIGHT - player.rect.height // 2, new_player_center.y))
+            # Clamp enemy
+            new_enemy_center.x = max(enemy.rect.width // 2, min(WINDOW_WIDTH - enemy.rect.width // 2, new_enemy_center.x))
+            new_enemy_center.y = max(enemy.rect.height // 2, min(WINDOW_HEIGHT - enemy.rect.height // 2, new_enemy_center.y))
+            player.rect.center = new_player_center
+            enemy.rect.center = new_enemy_center
+
+def draw_health_bar(surface, player):
+    font = pygame.font.SysFont('arial', 18, bold=True)
+    player_label = font.render('Player 1', True, 'white')
+    surface.blit(player_label, (25, 5))
+    bar_x, bar_y = 10, 30
+    bar_width, bar_height = 120, 20
+    pygame.draw.rect(surface, (60, 60, 60), (bar_x, bar_y, bar_width, bar_height), border_radius=5)
+    segment_gap = 2
+    segment_width = (bar_width - (player.max_health - 1) * segment_gap) // player.max_health
+    segment_height = bar_height - 4
+    for i in range(player.max_health):
+        seg_x = bar_x + i * (segment_width + segment_gap) + 2
+        seg_y = bar_y + 2
+        pygame.draw.rect(surface, (100, 100, 100), (seg_x, seg_y, segment_width, segment_height), border_radius=2, width=2)
+        inner_rect = (seg_x + 2, seg_y + 2, segment_width - 4, segment_height - 4)
+        color = (200, 0, 0) if i < player.health else (10, 10, 10)
+        pygame.draw.rect(surface, color, inner_rect, border_radius=1)
+
+def draw_enemy_health_bar(surface, enemy):
+    font = pygame.font.SysFont('arial', 16, bold=True)
+    enemy_label = font.render('Enemy', True, 'white')
+    bar_width, bar_height = 80, 14
+    bar_x = enemy.rect.centerx - bar_width // 2
+    bar_y = enemy.rect.top - bar_height - 18
+    surface.blit(enemy_label, (bar_x + bar_width // 2 - enemy_label.get_width() // 2, bar_y - 18))
+    pygame.draw.rect(surface, (60, 60, 60), (bar_x, bar_y, bar_width, bar_height), border_radius=4)
+    segment_gap = 2
+    segment_width = (bar_width - (enemy.max_health - 1) * segment_gap) // enemy.max_health
+    segment_height = bar_height - 4
+    for i in range(enemy.max_health):
+        seg_x = bar_x + i * (segment_width + segment_gap) + 2
+        seg_y = bar_y + 2
+        pygame.draw.rect(surface, (100, 100, 100), (seg_x, seg_y, segment_width, segment_height), border_radius=2, width=2)
+        inner_rect = (seg_x + 2, seg_y + 2, segment_width - 4, segment_height - 4)
+        color = (0, 120, 200) if i < enemy.health else (10, 10, 10)
+        pygame.draw.rect(surface, color, inner_rect, border_radius=1)
+
+class Ball(pygame.sprite.Sprite):
+    def __init__(self, pos, direction, groups, color=(255,0,0)):
+        super().__init__(groups)
+        self.image = pygame.Surface((10,10))
+        self.image.fill(color)
+        self.rect = self.image.get_frect(center=pos)
+        self.mask = pygame.mask.from_surface(self.image)
+        self.direction = direction.normalize()
+        self.speed = 200
+
+    def update(self, dt):
+        self.rect.center += self.direction * self.speed * dt
+        # Reverse direction if hitting window boundary
+        if self.rect.left < 0 or self.rect.right > WINDOW_WIDTH:
+            self.direction.x = self.direction.x * -1
+        elif self.rect.top <0 or self.rect.bottom > WINDOW_HEIGHT:
+            self.direction.y = self.direction.y * -1
+        # Reverse direction if hitting the chest
+        for chest in chest_group:
+            if self.rect.colliderect(chest.rect):
+                # Determine which side the collision happened on
+                dx = (self.rect.centerx - chest.rect.centerx) / chest.rect.width
+                dy = (self.rect.centery - chest.rect.centery) / chest.rect.height
+                if abs(dx) > abs(dy):
+                    self.direction.x *= -1
+                else:
+                    self.direction.y *= -1
+                # Move ball out of chest to prevent sticking
+                while self.rect.colliderect(chest.rect):
+                    self.rect.center += self.direction
+
+pygame.init()
+WINDOW_WIDTH, WINDOW_HEIGHT = 1280, 720
+display_surface = pygame.display.set_mode((WINDOW_WIDTH, WINDOW_HEIGHT))
+pygame.display.set_caption("Vampire Shooter")
+running = True
+clock = pygame.time.Clock()
+
+explosion_frames = [pygame.image.load(join('images', 'explosion', f'{i}.png')).convert_alpha() for i in range (21)]
+explosion_sound = pygame.mixer.Sound(join('audio', 'explosion.wav'))
+explosion_sound.set_volume(0.5)
+damage_sound = pygame.mixer.Sound(join('audio', 'damage.ogg'))
+damage_sound.set_volume(0.5)
+shoot_sound = pygame.mixer.Sound(join('audio', 'shoot.wav'))
+shoot_sound.set_volume(0.5)
+
+# Sprites
+all_sprites = pygame.sprite.Group()
+balls = pygame.sprite.Group()
+chest_group = pygame.sprite.Group()
+
+chest_surface = pygame.image.load(join('images', 'Chest.png')).convert_alpha()
+chest = Chest([all_sprites, chest_group], chest_surface)
+player = Player(all_sprites)
+enemy = Player_Enemy(all_sprites)
+
+level_one_img = pygame.image.load(join('images', 'Level_One_Screen.png')).convert()
+level_one_img = pygame.transform.scale(level_one_img, (WINDOW_WIDTH, WINDOW_HEIGHT))
+display_surface.blit(level_one_img, (0, 0))
+pygame.display.update()
+pygame.time.wait(3000)
+
+while running:
+    dt = clock.tick(60) / 1000
+
+    for event in pygame.event.get():
+        if event.type == pygame.QUIT:
+            running = False
+        elif player.alive() and event.type == pygame.KEYDOWN and event.key == pygame.K_SPACE:
+            ball_direction = player.direction if player.direction.length() > 0 else pygame.math.Vector2()
+            if ball_direction.length() == 0:
+                if player.current_direction == 'right':
+                    ball_direction.x = 1
+                elif player.current_direction == 'left':
+                    ball_direction.x = -1
+                elif player.current_direction == 'up':
+                    ball_direction.y = -1
+                elif player.current_direction == 'down':
+                    ball_direction.y = 1
+            offset_distance = player.rect.width // 2 + 6
+            if ball_direction.length() != 0:
+                spawn_pos = (player.rect.centerx + ball_direction.x * offset_distance,
+                             player.rect.centery + ball_direction.y * offset_distance)
+            else:
+                spawn_pos = player.rect.center
+            Ball(spawn_pos, ball_direction, [all_sprites, balls])
+            shoot_sound.play()
+
+    all_sprites.update(dt)
+    collisions()
+
+    display_surface.fill((120, 120, 120))  # Gray background for mask debugging
+    all_sprites.draw(display_surface)
+    draw_health_bar(display_surface, player)
+    if enemy is not None and enemy.alive():
+        draw_enemy_health_bar(display_surface, enemy)
+    if not player.alive():
+        game_over_label = pygame.font.SysFont('arial', 50).render('Game Over', True, 'red')
+        game_over_rect = game_over_label.get_rect(center=(WINDOW_WIDTH / 2, WINDOW_HEIGHT / 2))
+        display_surface.blit(game_over_label, game_over_rect)
+    pygame.display.update()
+
+pygame.quit()
+
+
