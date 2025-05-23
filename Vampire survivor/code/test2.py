@@ -2,107 +2,121 @@ import pygame
 from os.path import join 
 
 pygame.init()
-screen = pygame.display.set_mode((800, 600))
+WIDTH, HEIGHT = 800, 600
+screen = pygame.display.set_mode((WIDTH, HEIGHT))
 pygame.display.set_caption("Vampire Survivor-test environment")
 clock = pygame.time.Clock()
 running = True
 
 # Load images
-down_walk = [pygame.image.load(join('images', 'player', 'down', f'{i}.png')).convert_alpha() for i in range(0, 3)]
-left_walk = [pygame.image.load(join('images', 'player', 'left', f'{i}.png')).convert_alpha() for i in range(0, 3)]
-right_walk = [pygame.image.load(join('images', 'player', 'right', f'{i}.png')).convert_alpha() for i in range(0, 3)]
-up_walk = [pygame.image.load(join('images', 'player', 'up', f'{i}.png')).convert_alpha() for i in range(0, 3)]
+down_walk = [pygame.image.load(join('images', 'player', 'down', f'{i}.png')).convert_alpha() for i in range(0, 4)]
+left_walk = [pygame.image.load(join('images', 'player', 'left', f'{i}.png')).convert_alpha() for i in range(0, 4)]
+right_walk = [pygame.image.load(join('images', 'player', 'right', f'{i}.png')).convert_alpha() for i in range(0, 4)]
+up_walk = [pygame.image.load(join('images', 'player', 'up', f'{i}.png')).convert_alpha() for i in range(0, 4)]
 
-class Player:
-    def __init__(self, x, y):
-        self.x = x
-        self.y = y
-        self.direction = 'down'
-        self.walk_images = {
+class Player(pygame.sprite.Sprite):
+    def __init__(self, groups):
+        super().__init__(groups)
+        self.image = down_walk[0]
+        self.rect = self.image.get_frect(center=(25, 25))
+        self.direction = pygame.math.Vector2()
+        self.speed = 100
+        self.frame_index = 0
+        self.animation_speed = 0.1
+        self.current_direction = 'down'
+        self.images = {
             'down': down_walk,
             'left': left_walk,
             'right': right_walk,
             'up': up_walk
         }
-        self.frame = 0
-        self.image = self.walk_images[self.direction][self.frame]
-        self.speed = 4
-        self.anim_counter = 0
+        # Animation timer for tap animation
+        self.anim_timer = 0
+        self.anim_duration = 0.15  # seconds to continue animating after tap
+        
 
-    def update(self, keys):
-        moved = False
-        dx, dy = 0, 0
-
-        if keys[pygame.K_LEFT]:
-            dx -= self.speed
+    def update(self, dt):
+        keys = pygame.key.get_pressed()
+        self.direction.x = int(keys[pygame.K_RIGHT]) - int(keys[pygame.K_LEFT])
+        self.direction.y = int(keys[pygame.K_DOWN]) - int(keys[pygame.K_UP])
         if keys[pygame.K_RIGHT]:
-            dx += self.speed
-        if keys[pygame.K_UP]:
-            dy -= self.speed
-        if keys[pygame.K_DOWN]:
-            dy += self.speed
-
-        # Normalize diagonal movement
-        if dx != 0 and dy != 0:
-            dx *= 0.7071  # 1/sqrt(2)
-            dy *= 0.7071
-
-        if dx != 0 or dy != 0:
-            moved = True
-            self.x += dx
-            self.y += dy
-            # Set direction for animation
-            if dx < 0:
-                self.direction = 'left'
-            elif dx > 0:
-                self.direction = 'right'
-            elif dy < 0:
-                self.direction = 'up'
-            elif dy > 0:
-                self.direction = 'down'
-
-        if self.x <0:
-            self.x = 0
-        if self.x > 800:
-            self.x = 800
-        if self.y < 0:
-            self.y = 0
-        if self.y > 600:
-            self.y = 600
-
-        if moved:
-            self.anim_counter += 1
-            if self.anim_counter % 8 == 0:
-                self.frame = (self.frame + 1) % len(self.walk_images[self.direction])
+            self.current_direction = 'right'
+        elif keys[pygame.K_LEFT]:
+            self.current_direction = 'left'
+        elif keys[pygame.K_UP]:
+            self.current_direction = 'up'
+        elif keys[pygame.K_DOWN]:
+            self.current_direction = 'down'
         else:
-            self.frame = 0  # Reset to standing frame
+            self.moved = False
 
-        self.image = self.walk_images[self.direction][self.frame]
+        # If movement key is pressed, reset animation timer
+        if self.direction.length() > 0:
+            self.anim_timer = self.anim_duration
+            self.direction = self.direction.normalize()
+            # Move and clamp x axis first with mask collision
+            if self.direction.x != 0:
+                self.rect.centerx += self.direction.x * self.speed * dt
+            # Then move and clamp y axis with mask collision
+            if self.direction.y != 0:
+                self.rect.centery += self.direction.y * self.speed * dt
+        else:
+            # Decrease animation timer if not moving
+            if self.anim_timer > 0:
+                self.anim_timer -= dt
+            else:
+                self.anim_timer = 0
 
-    def draw(self, surface):
-        surface.blit(self.image, (self.x, self.y))
+        # Animate if moving or animation timer is active
+        if self.direction.length() > 0 or self.anim_timer > 0:
+            self.frame_index += self.animation_speed
+            if self.frame_index >= len(self.images[self.current_direction]):
+                self.frame_index = 0
+            self.image = self.images[self.current_direction][int(self.frame_index)]
+        else:
+            self.frame_index = 0
+            self.image = self.images[self.current_direction][int(self.frame_index)]
+        
 
-player = Player(400, 300)
+        if self.rect.left < -32:
+            self.rect.left = -32
+        if self.rect.right > 832:
+            self.rect.right = 832
+        if self.rect.top < -32:
+            self.rect.top = -32
+        if self.rect.bottom > 632:
+            self.rect.bottom = 632
+
+
+all_sprites = pygame.sprite.Group()
+player = Player(all_sprites)
 
 while running:
+    dt = clock.tick(60) / 1000
     for event in pygame.event.get():
         if event.type == pygame.QUIT:
             running = False
 
-    keys = pygame.key.get_pressed()
-    player.update(keys)
+    
+    all_sprites.update(dt)
 
-    screen.fill((0, 0, 0))
+    if player.direction.length() > 0:
+        feet_x = player.rect.centerx + 20
+        feet_y = player.rect.centery - 30
+        tile_x = int(feet_x // 40)
+        tile_y = int(feet_y // 40)
+        print(f"Player is in tile: ({tile_x}, {tile_y})  Pixel: ({int(player.rect.centerx)}, {int(player.rect.centery)})")
+
+    screen.fill((100, 100, 100))
 
     for row in range(15):
         for col in range(20):
             rect = pygame.Rect(col * 40, row * 40, 40, 40)
             pygame.draw.rect(screen, (255, 255, 255), rect, 1)
+    all_sprites.draw(screen)
 
-    player.draw(screen)
-
-    pygame.display.flip()
-    clock.tick(60)
+    pygame.display.update()
+    
 
 pygame.quit()
 
